@@ -27,7 +27,7 @@ snake_block = 80
 snake_speed = (80 / 60) * 1.6
 framerate = 60
 
-prev_cell_coof = 10
+prev_cell_coof = 50
 
 font_style = pygame.font.SysFont("bahnschrift", 25)
 score_font = pygame.font.SysFont("comicsansms", 35)
@@ -121,8 +121,8 @@ def game_loop():
     x1 = dis_width / 2
     y1 = dis_height / 2
 
-    x1_prev = x1
-    y1_prev = y1
+    x1_change_prev = x1
+    y1_change_prev = y1
 
     steps = 0
 
@@ -138,15 +138,15 @@ def game_loop():
 
     def re_init_game():
         nonlocal x1, y1, x1_change, y1_change, snake_list, length_of_snake
-        nonlocal food_x, food_y, x1_prev, y1_prev, steps
+        nonlocal food_x, food_y, x1_change_prev, y1_change_prev, steps
         x1 = dis_width / 2
         y1 = dis_height / 2
 
         x1_change = -1
         y1_change = 0
 
-        x1_prev = x1
-        y1_prev = y1
+        x1_change_prev = x1
+        y1_change_prev = y1
 
         steps = 0
 
@@ -212,12 +212,14 @@ def game_loop():
         y1 += y1_change
         pygame.draw.rect(dis, green, [food_x, food_y, snake_block, snake_block])
 
-        snake_head = [x1, y1]
-        snake_head_prev = [x1 - x1_change * prev_cell_coof, y1 - y1_change * prev_cell_coof]
-        snake_list.append(snake_head_prev)
-        if steps > 3:
+        snake_head = [x1 + x1_change, y1 + y1_change]
+
+        snake_head_prev = [x1, y1]
+        if steps == 5:
+            snake_list.append(snake_head_prev)
+        if steps == 10:
             if len(snake_list) > length_of_snake:
-                snake_list = snake_list[-length_of_snake - 3:]
+                snake_list = snake_list[-length_of_snake:]
             steps = 0
         steps += 1
 
@@ -232,7 +234,7 @@ def game_loop():
         pygame.display.update()
 
         food_rect = pygame.Rect((food_x, food_y, snake_block, snake_block))
-        head_rect = pygame.Rect((x1, y1, snake_block, snake_block))
+        head_rect = pygame.Rect((snake_head[0], snake_head[1], snake_block, snake_block))
 
         if food_rect.colliderect(head_rect):
             food_x = round(random.randrange(0, dis_width - snake_block) / 10.0) * 10.0
