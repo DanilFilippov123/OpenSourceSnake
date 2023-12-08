@@ -1,7 +1,8 @@
+import numpy
 import numpy as np
 import pygame
-import time
 import random
+from pygame.math import Vector2
 
 import cv2
 import mediapipe as mp
@@ -15,8 +16,8 @@ red = (213, 50, 80)
 green = (0, 255, 0)
 blue = (50, 153, 213)
  
-dis_width = 640
-dis_height = 480
+dis_width = 1080
+dis_height = 960
  
 dis = pygame.display.set_mode((dis_width, dis_height))
 pygame.display.set_caption('Snake Game by Pythonist')
@@ -24,25 +25,84 @@ pygame.display.set_caption('Snake Game by Pythonist')
 clock = pygame.time.Clock()
  
 snake_block = 80
-snake_speed = (80 / 60) * 1.6
+snake_speed = snake_block
 framerate = 60
+
+side_bar_width = round(dis_width / 3)
+side_bar_height = dis_height / 3
+
+game_screen_rect = pygame.Rect(side_bar_width, 0, dis_width - side_bar_width, dis_height)
 
 prev_cell_coof = 50
 
 font_style = pygame.font.SysFont("bahnschrift", 25)
 score_font = pygame.font.SysFont("comicsansms", 35)
  
- 
+class Hands:
+    mp_hands = mp.solutions.hands
+    cap = cv2.VideoCapture(0)
+    draw = mp.solutions.drawing_utils
+
+    hands = mp_hands.Hands(
+        model_complexity=1,
+        max_num_hands=1,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5)
+
+    @staticmethod
+    def cv2_image_to_surface(cv_image: np.ndarray) -> pygame.Surface:
+        if cv_image.dtype.name == 'uint16':
+            cv_image = (cv_image / 256).astype('uint8')
+        size = cv_image.shape[1::-1]
+        if len(cv_image.shape) == 2:
+            cv_image = np.repeat(cv_image.reshape(size[1], size[0], 1), 3, axis=2)
+            format_pixel = 'RGB'
+        else:
+            format_pixel = 'RGBA' if cv_image.shape[2] == 4 else 'RGB'
+            cv_image[:, :, [0, 2]] = cv_image[:, :, [2, 0]]
+        surface = pygame.image.frombuffer(cv_image.flatten(), size, format_pixel)
+        return surface.convert_alpha() if format_pixel == 'RGBA' else surface.convert()
+
+    @staticmethod
+    def resize(image):
+        if image.shape[1] > side_bar_width:
+             coefficient = side_bar_width / image.shape[1]
+             width = int(image.shape[1] * coefficient)
+             height = int(image.shape[0] * coefficient)
+             size = (width, height)
+             return cv2.resize(image, size)
+        return image
+
+    @staticmethod
+    def cv2_finger_coord_image() -> tuple[Vector2 | None, numpy.ndarray]:
+        _, image = Hands.cap.read()
+        image = Hands.resize(image)
+        h, w, _ = image.shape
+        result = Hands.hands.process(image)
+        if result.multi_hand_landmarks:
+            Hands.draw.draw_landmarks(image, result.multi_hand_landmarks[0], mp.solutions.hands.HAND_CONNECTIONS)
+            for idx, finger in enumerate(result.multi_hand_landmarks[0].landmark):
+                return Vector2(finger.x * h, finger.y * w), image
+        return None, image
+
+
+
+    @staticmethod
+    def close():
+        Hands.hands.close()
+        Hands.cap.release()
+
+
 def your_score(score):
     value = score_font.render("Your Score: " + str(score), True, yellow)
     dis.blit(value, [0, 0])
  
  
  
-def our_snake(snake_head, snake_list):
-    pygame.draw.rect(dis, black, [snake_head[0], snake_head[1], snake_block, snake_block])
+def our_snake(snake_head: pygame.Rect, snake_list: list[pygame.Rect]):
+    pygame.draw.rect(dis, green, snake_head)
     for x in snake_list:
-        pygame.draw.circle(dis, black, [x[0] + snake_block / 2, x[1] + snake_block / 2], snake_block / 2)
+        pygame.draw.circle(dis, green, x.center, snake_block / 2)
  
  
 def message(msg, color):
@@ -50,204 +110,109 @@ def message(msg, color):
     dis.blit(mesg, [dis_width / 6, dis_height / 3])
 
 
-def resize(image):
-    if image.shape[1] > 900:
-        coefficient = 900 / image.shape[1]
-        width = int(image.shape[1] * coefficient)
-        height = int(image.shape[0] * coefficient)
-        size = (width, height)
-        return cv2.resize(image, size)
-    return image
-
-
-def cv2_image_to_surface(cv_image: np.ndarray) -> pygame.Surface:
-    if cv_image.dtype.name == 'uint16':
-        cv_image = (cv_image / 256).astype('uint8')
-    size = cv_image.shape[1::-1]
-    if len(cv_image.shape) == 2:
-        cv_image = np.repeat(cv_image.reshape(size[1], size[0], 1), 3, axis=2)
-        format = 'RGB'
-    else:
-        format = 'RGBA' if cv_image.shape[2] == 4 else 'RGB'
-        cv_image[:, :, [0, 2]] = cv_image[:, :, [2, 0]]
-    surface = pygame.image.frombuffer(cv_image.flatten(), size, format)
-    return surface.convert_alpha() if format == 'RGBA' else surface.convert()
-
-def cv2_finger_coord_image(hands, cap) -> tuple[float, float, np.ndarray]:
-    x1_change = 0
-    y1_change = 0
-    offset = 100
-
-    image: np.ndarray | None = None
-    if cap.isOpened():
-        success, image = cap.read()
-        image = resize(image)
-        if not success:
-            print("Ignoring empty camera frame.")
-            return 0, 0, image
-    h, w, _ = image.shape
-    x_center = w // 2
-    y_center = h // 2
-    cv2.line(image, (x_center + offset, 0), (x_center + offset, h), green, 2)
-    cv2.line(image, (x_center - offset, 0), (x_center - offset, h), green, 2)
-    cv2.line(image, (0, y_center + offset), (w, y_center + offset), green, 2)
-    cv2.line(image, (0, y_center - offset), (w, y_center - offset), green, 2)
-    results = hands.process(image)
-    if results.multi_hand_landmarks:
-        for idx, lm in enumerate(results.multi_hand_landmarks[0].landmark):
-            if idx == 8:
-                cx, cy = int(lm.x * w), int(lm.y * h)
-                cv2.circle(image, (cx, cy), 20, (255, 0, 255), cv2.FILLED)
-                if cx >= (x_center + offset) and (y_center - offset) <= cy <= (y_center + offset):
-                    x1_change = -snake_speed
-                    y1_change = 0
-                if cx <= (x_center - offset) and (y_center - offset) <= cy <= y_center + offset:
-                    x1_change = snake_speed
-                    y1_change = 0
-                if cy <= (y_center - offset) and (x_center - offset) <= cx <= (x_center + offset):
-                    y1_change = -snake_speed
-                    x1_change = 0
-                if cy >= (y_center + offset) and (x_center - offset) <= cx <= (x_center + offset):
-                    y1_change = snake_speed
-                    x1_change = 0
-    image = cv2.flip(image, flipCode=1)
-
-    return x1_change, y1_change, image
-
-def game_loop():
-    game_over = False
-    game_close = False
- 
-    x1 = dis_width / 2
-    y1 = dis_height / 2
-
-    x1_change_prev = x1
-    y1_change_prev = y1
-
-    steps = 0
-
-    x1_change = -1
-    y1_change = 0
- 
-    snake_list = []
-    length_of_snake = 1
-
-    food_x = round(random.randrange(0, dis_width - snake_block) / 10.0) * 10.0
-    food_y = round(random.randrange(0, dis_height - snake_block) / 10.0) * 10.0
-
-
-    def re_init_game():
-        nonlocal x1, y1, x1_change, y1_change, snake_list, length_of_snake
-        nonlocal food_x, food_y, x1_change_prev, y1_change_prev, steps
-        x1 = dis_width / 2
-        y1 = dis_height / 2
-
-        x1_change = -1
-        y1_change = 0
-
-        x1_change_prev = x1
-        y1_change_prev = y1
-
-        steps = 0
-
-        snake_list = []
-        length_of_snake = 1
-
-        food_x = round(random.randrange(0, dis_width - snake_block) / 10.0) * 10.0
-        food_y = round(random.randrange(0, dis_height - snake_block) / 10.0) * 10.0
-
-    mp_hands = mp.solutions.hands
-    cap = cv2.VideoCapture(0)
-
-    hands = mp_hands.Hands(
-                model_complexity=0,
-                max_num_hands=1,
-                min_detection_confidence=0.5,
-                min_tracking_confidence=0.5)
-
-    while not game_over:
-        while game_close:
-            dis.fill(blue)
-            message("You Lost! Press C-Play Again or Q-Quit", red)
-            your_score(length_of_snake - 1)
-            pygame.display.update()
- 
-            for event in pygame.event.get():
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_q:
-                        game_over = True
-                        game_close = False
-                    if event.key == pygame.K_c:
-                        re_init_game()
-                        game_close = False
-                        break
- 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                game_over = True
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_LEFT:
-                    x1_change = -snake_speed
-                    y1_change = 0
-                elif event.key == pygame.K_RIGHT:
-                    x1_change = snake_speed
-                    y1_change = 0
-                elif event.key == pygame.K_UP:
-                    y1_change = -snake_speed
-                    x1_change = 0
-                elif event.key == pygame.K_DOWN:
-                    y1_change = snake_speed
-                    x1_change = 0
-
-        cv_x1_change, cv_y1_change, image = cv2_finger_coord_image(hands, cap)
-
-        x1_change = cv_x1_change if cv_x1_change != 0 else x1_change
-        y1_change = cv_y1_change if cv_y1_change != 0 else y1_change
-
-        dis.blit(cv2_image_to_surface(image), (0, 0))
-
-        if x1 >= dis_width or x1 < 0 or y1 >= dis_height or y1 < 0:
-            game_close = True
-        x1 += x1_change
-        y1 += y1_change
-        pygame.draw.rect(dis, green, [food_x, food_y, snake_block, snake_block])
-
-        snake_head = [x1 + x1_change, y1 + y1_change]
-
-        snake_head_prev = [x1, y1]
-        if steps == 5:
-            snake_list.append(snake_head_prev)
-        if steps == 10:
-            if len(snake_list) > length_of_snake:
-                snake_list = snake_list[-length_of_snake:]
-            steps = 0
-        steps += 1
-
-
-        for x in snake_list[:-1]:
-            if x == snake_head:
-                game_close = True
- 
-        our_snake(snake_head, snake_list)
-        your_score(length_of_snake - 1)
- 
-        pygame.display.update()
-
-        food_rect = pygame.Rect((food_x, food_y, snake_block, snake_block))
-        head_rect = pygame.Rect((snake_head[0], snake_head[1], snake_block, snake_block))
-
-        if food_rect.colliderect(head_rect):
-            food_x = round(random.randrange(0, dis_width - snake_block) / 10.0) * 10.0
-            food_y = round(random.randrange(0, dis_height - snake_block) / 10.0) * 10.0
-            length_of_snake += 1
- 
-        clock.tick(framerate)
-
-    hands.close()
-    cap.release()
+def quite_game():
+    Hands.close()
     pygame.quit()
     quit()
 
+def game_loop():
+    head_vec = Vector2((dis_width + side_bar_width) / 2, dis_width / 2)
+    head_rect = pygame.Rect(head_vec, (snake_block, snake_block))
 
+    snake_list: list[pygame.Rect] = [head_rect]
+
+    food_vec = Vector2(round(random.randrange(side_bar_width, dis_width - snake_block) / 10.0) * 10.0,
+                       round(random.randrange(0, dis_height - snake_block) / 10.0) * 10.0)
+    food_rect = pygame.Rect(food_vec, (snake_block, snake_block))
+
+    snake_speed_vec = Vector2(0, 0)
+
+    game_close = False
+
+    score = 0
+
+    update_snake_event = pygame.USEREVENT + 1
+    pygame.time.set_timer(update_snake_event, 500)
+
+    update_finger_coordinates = pygame.USEREVENT + 2
+    pygame.time.set_timer(update_finger_coordinates, 1000)
+
+    def re_init_game():
+        nonlocal head_vec, snake_list, food_vec, head_rect, food_rect,snake_speed_vec,game_close,score
+        head_vec = Vector2((dis_width + side_bar_width) / 2, dis_width / 2)
+        head_rect = pygame.Rect(head_vec, (snake_block, snake_block))
+        snake_list = [head_rect]
+        food_vec = Vector2(round(random.randrange(side_bar_width, dis_width - snake_block) / 10.0) * 10.0,
+                           round(random.randrange(0, dis_height - snake_block) / 10.0) * 10.0)
+        food_rect = pygame.Rect(food_vec, (snake_block, snake_block))
+        snake_speed_vec = Vector2(0, 0)
+        game_close = False
+        score = 0
+
+    while True:
+        if game_close:
+            dis.fill(blue)
+            message("You Lost! Press C-Play Again or Q-Quit", red)
+            your_score(score)
+            pygame.display.update()
+
+            while game_close:
+                for event in pygame.event.get():
+                    if event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_q:
+                            quite_game()
+                        if event.key == pygame.K_c:
+                            re_init_game()
+                            game_close = False
+                            break
+
+        finger_vec_new, image = Hands.cv2_finger_coord_image()
+        if finger_vec_new is not None:
+            finger_vec = finger_vec_new
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                quite_game()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_LEFT:
+                    snake_speed_vec.xy = -snake_speed, 0
+                elif event.key == pygame.K_RIGHT:
+                    snake_speed_vec.xy = snake_speed, 0
+                elif event.key == pygame.K_UP:
+                    snake_speed_vec.xy = 0, -snake_speed
+                elif event.key == pygame.K_DOWN:
+                    snake_speed_vec.xy = 0, snake_speed
+            if event.type == update_snake_event:
+                snake_speed_vec = snake_speed_vec.normalize() * snake_speed if snake_speed_vec.length() != 0 else snake_speed_vec
+
+                head_rect.move_ip(snake_speed_vec)
+
+                snake_list.append(head_rect.copy())
+                if len(snake_list) > score + 1:
+                    del snake_list[0]
+
+                if food_rect.colliderect(head_rect):
+                    score += 1
+                    food_vec = Vector2(round(random.randrange(side_bar_width, dis_width - snake_block) / 10.0) * 10.0,
+                                       round(random.randrange(0, dis_height - snake_block) / 10.0) * 10.0)
+                    food_rect = pygame.Rect(food_vec, (snake_block, snake_block))
+
+                if any((cell.contains(head_rect) for cell in snake_list[:-1])):
+                    game_close = True
+
+        dis.fill(blue)
+
+
+        if not game_screen_rect.contains(head_rect):
+            game_close = True
+
+        pygame.draw.rect(dis, green, food_rect)
+
+        our_snake(head_rect, snake_list)
+        your_score(score)
+
+        pygame.display.update()
+
+        clock.tick(framerate)
 
 game_loop()
