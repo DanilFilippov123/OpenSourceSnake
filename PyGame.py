@@ -78,11 +78,16 @@ class Hands:
         _, image = Hands.cap.read()
         image = Hands.resize(image)
         h, w, _ = image.shape
+
+        image = cv2.flip(image, flipCode=1)
         result = Hands.hands.process(image)
+
         if result.multi_hand_landmarks:
             Hands.draw.draw_landmarks(image, result.multi_hand_landmarks[0], mp.solutions.hands.HAND_CONNECTIONS)
             for idx, finger in enumerate(result.multi_hand_landmarks[0].landmark):
-                return Vector2(finger.x * h, finger.y * w), image
+                if idx == 8:
+                    cx, cy = int(finger.x * w), int(finger.y * h)
+                    return Vector2(cx, cy), image
         return None, image
 
 
@@ -166,9 +171,6 @@ def game_loop():
                             game_close = False
                             break
 
-        finger_vec_new, image = Hands.cv2_finger_coord_image()
-        if finger_vec_new is not None:
-            finger_vec = finger_vec_new
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -196,12 +198,46 @@ def game_loop():
                     food_vec = Vector2(round(random.randrange(side_bar_width, dis_width - snake_block) / 10.0) * 10.0,
                                        round(random.randrange(0, dis_height - snake_block) / 10.0) * 10.0)
                     food_rect = pygame.Rect(food_vec, (snake_block, snake_block))
-
+                    while any((Vector2(cell.center).distance_to(food_vec) < snake_block for cell in snake_list)):
+                        food_vec = Vector2(
+                            round(random.randrange(side_bar_width, dis_width - snake_block) // snake_block) * snake_block,
+                            round(random.randrange(0, dis_height - snake_block) // snake_block) * snake_block)
+                        food_rect = pygame.Rect(food_vec, (snake_block, snake_block))
                 if any((cell.contains(head_rect) for cell in snake_list[:-1])):
                     game_close = True
 
+        finger_vec_new, image = Hands.cv2_finger_coord_image()
+
+
+
         dis.fill(blue)
+
+        if finger_vec_new is not None:
+            finger_vec_new.x = ((finger_vec_new.x - 30) / 290) * dis_width + side_bar_width
+            if finger_vec_new.x < side_bar_width:
+                finger_vec_new.x = side_bar_width + 10
+            if finger_vec_new.x > dis_width:
+                finger_vec_new.x = dis_width
+
+            finger_vec_new.y = ((finger_vec_new.y - 50) / 170) * dis_height
+            if finger_vec_new.y < 0:
+                finger_vec_new.y = 10
+            if finger_vec_new.y > dis_height:
+                finger_vec_new.y = dis_height - 10
+
+            pygame.draw.circle(dis, green, finger_vec_new, 10)
+
+            snake_speed_vec =  (head_vec - finger_vec_new).normalize() * snake_speed
+
+            print(snake_speed_vec.xy)
+
+        image = cv2.rectangle(image, (30, 50), (320, 220), green)
+
+
         dis.blit(Hands.cv2_image_to_surface(image), (0, 0))
+
+
+
 
         if not game_screen_rect.contains(head_rect):
             game_close = True
