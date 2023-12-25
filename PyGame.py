@@ -95,19 +95,19 @@ class Hands:
 
 def your_score(score):
     value = score_font.render("Your Score: " + str(score), True, yellow)
-    dis.blit(value, [0, 0])
+    dis.blit(value, [0, game_screen_rect.h - 200])
  
  
  
 def our_snake(snake_head: pygame.Rect, snake_list: list[pygame.Rect]):
-    pygame.draw.rect(dis, green, snake_head)
     for x in snake_list:
-        pygame.draw.circle(dis, green, x.center, snake_block / 2)
- 
+        pygame.draw.circle(dis, red, x.center, snake_block / 2)
+    pygame.draw.rect(dis, white, snake_head)
+
  
 def message(msg, color):
-    mesg = font_style.render(msg, True, color)
-    dis.blit(mesg, [dis_width / 6, dis_height / 3])
+    mess = font_style.render(msg, True, color)
+    dis.blit(mess, [dis_width / 6, dis_height / 3])
 
 
 def quite_game():
@@ -201,7 +201,7 @@ def game_loop():
                     game_close = True
 
         dis.fill(blue)
-
+        dis.blit(Hands.cv2_image_to_surface(image), (0, 0))
 
         if not game_screen_rect.contains(head_rect):
             game_close = True
