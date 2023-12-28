@@ -1,3 +1,5 @@
+import csv
+
 import numpy
 import numpy as np
 import pygame
@@ -6,6 +8,8 @@ from pygame.math import Vector2
 
 import cv2
 import mediapipe as mp
+import os
+
 
 pygame.init()
  
@@ -15,29 +19,44 @@ black = (0, 0, 0)
 red = (213, 50, 80)
 green = (0, 255, 0)
 blue = (50, 153, 213)
- 
-dis_width = 1080
-dis_height = 960
- 
-dis = pygame.display.set_mode((dis_width, dis_height))
+
+dis = pygame.display.set_mode(flags=pygame.FULLSCREEN)
+
+#dis_height, dis_width  = dis.get_size()
+
+dis_width = 1920
+dis_height = 1080
+#
+# dis = pygame.display.set_mode((dis_width, dis_height))
+
+
 pygame.display.set_caption('Snake Game by Pythonist')
  
 clock = pygame.time.Clock()
  
-snake_block = 80
-snake_speed = snake_block
+snake_block = 40
+snake_speed = 15
 framerate = 60
 
 side_bar_width = round(dis_width / 3)
-side_bar_height = dis_height / 3
+side_bar_height = 480
+
+game_zone_height = 400
+game_zone_width = 400
+
+left_padding = (side_bar_width - game_zone_width) // 2
+bottom_padding = (side_bar_height - game_zone_height) // 2
 
 game_screen_rect = pygame.Rect(side_bar_width, 0, dis_width - side_bar_width, dis_height)
 
 prev_cell_coof = 50
 
-font_style = pygame.font.SysFont("bahnschrift", 25)
+font_style = pygame.font.SysFont("bahnschrift", 45)
 score_font = pygame.font.SysFont("comicsansms", 35)
- 
+
+score_file = "score.csv"
+score_list: list[dict[str, int]] = []
+
 class Hands:
     mp_hands = mp.solutions.hands
     cap = cv2.VideoCapture(0)
@@ -76,8 +95,8 @@ class Hands:
     @staticmethod
     def cv2_finger_coord_image() -> tuple[Vector2 | None, numpy.ndarray]:
         _, image = Hands.cap.read()
-        image = Hands.resize(image)
         h, w, _ = image.shape
+        image = Hands.resize(image)
 
         image = cv2.flip(image, flipCode=1)
         result = Hands.hands.process(image)
@@ -98,10 +117,21 @@ class Hands:
         Hands.cap.release()
 
 
-def your_score(score):
-    value = score_font.render("Your Score: " + str(score), True, yellow)
-    dis.blit(value, [0, game_screen_rect.h - 200])
- 
+def your_score(score: int, surf: pygame.Surface):
+    value = score_font.render("Нынешний счёт: " + str(score), True, yellow)
+    surf.blit(value, (0, game_screen_rect.h - 400))
+    score_list.sort(key=lambda x: x["score"], reverse=True)
+
+    score_list_int = list(map(lambda x: x["score"], score_list))
+    score_list_int = list(set(score_list_int))
+    score_list_int.sort(reverse=True)
+
+    txt = score_font.render("Топ:", True, yellow)
+    surf.blit(txt, (60, game_screen_rect.h - 350))
+    for i, s in enumerate(score_list_int[:5]):
+        value = score_font.render(" " + str(s), True, yellow)
+        surf.blit(value, (60, game_screen_rect.h - 320 + i * 40 + 20))
+
  
  
 def our_snake(snake_head: pygame.Rect, snake_list: list[pygame.Rect]):
@@ -110,18 +140,45 @@ def our_snake(snake_head: pygame.Rect, snake_list: list[pygame.Rect]):
     pygame.draw.rect(dis, white, snake_head)
 
  
-def message(msg, color):
+def message(msg: str, pos: tuple[int, int], color):
     mess = font_style.render(msg, True, color)
-    dis.blit(mess, [dis_width / 6, dis_height / 3])
+    dis.blit(mess, [pos[0], pos[1]])
 
 
-def quite_game():
+def quite_game(score):
     Hands.close()
     pygame.quit()
+    score_list.append({"score": score})
+    save_score(score_list, score_file)
     quit()
 
+def side_bar_surface(image, score) -> pygame.Surface:
+    surface = pygame.Surface((side_bar_width, dis_height))
+    surface.fill((0,0,0))
+    surface.blit(Hands.cv2_image_to_surface(image), (0, 0))
+    your_score(score, surface)
+    return surface
+
+def load_score(file_name: str) -> list[dict[str, int]]:
+    with open(file_name) as f:
+        reader = csv.DictReader(f)
+        res = []
+        row: dict[str, int]
+        for row in reader:
+            row["score"] = int(row["score"])
+            res.append(row)
+        return res
+def save_score(score_list: list[dict[str, int]], file_name: str):
+    with open(file_name, "w") as f:
+        writer = csv.DictWriter(f, ("score",))
+        writer.writeheader()
+        score_list.sort(key=lambda x: x["score"], reverse=True)
+        writer.writerows(score_list)
+
+
 def game_loop():
-    head_vec = Vector2((dis_width + side_bar_width) / 2, dis_width / 2)
+    head_vec = Vector2(round(random.randrange(side_bar_width, dis_width - snake_block) / 10.0) * 10.0,
+                       round(random.randrange(0, dis_height - snake_block) / 10.0) * 10.0)
     head_rect = pygame.Rect(head_vec, (snake_block, snake_block))
 
     snake_list: list[pygame.Rect] = [head_rect]
@@ -137,7 +194,7 @@ def game_loop():
     score = 0
 
     update_snake_event = pygame.USEREVENT + 1
-    pygame.time.set_timer(update_snake_event, 500)
+    pygame.time.set_timer(update_snake_event, 93)
 
     update_finger_coordinates = pygame.USEREVENT + 2
     pygame.time.set_timer(update_finger_coordinates, 1000)
@@ -157,24 +214,31 @@ def game_loop():
     while True:
         if game_close:
             dis.fill(blue)
-            message("You Lost! Press C-Play Again or Q-Quit", red)
-            your_score(score)
+            message("Вы проиграли! Нажмите Q чтобы выйти или C чтобы продолжить.", (dis_width // 3, dis_height // 2), red)
+            _, image = Hands.cv2_finger_coord_image()
+            dis.blit(side_bar_surface(image, score), (0, 0))
             pygame.display.update()
 
             while game_close:
+                _, image = Hands.cv2_finger_coord_image()
+                dis.blit(side_bar_surface(image, score), (0, 0))
                 for event in pygame.event.get():
                     if event.type == pygame.KEYDOWN:
                         if event.key == pygame.K_q:
-                            quite_game()
+                            quite_game(score)
                         if event.key == pygame.K_c:
                             re_init_game()
                             game_close = False
                             break
+                        if event.type == pygame.QUIT:
+                            quite_game(score)
+                pygame.display.update()
+
 
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                quite_game()
+                quite_game(score)
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_LEFT:
                     snake_speed_vec.xy = -snake_speed, 0
@@ -188,10 +252,11 @@ def game_loop():
                 snake_speed_vec = snake_speed_vec.normalize() * snake_speed if snake_speed_vec.length() != 0 else snake_speed_vec
 
                 head_rect.move_ip(snake_speed_vec)
-
+                head_vec = Vector2(head_rect.center)
                 snake_list.append(head_rect.copy())
                 if len(snake_list) > score + 1:
                     del snake_list[0]
+
 
                 if food_rect.colliderect(head_rect):
                     score += 1
@@ -203,7 +268,8 @@ def game_loop():
                             round(random.randrange(side_bar_width, dis_width - snake_block) // snake_block) * snake_block,
                             round(random.randrange(0, dis_height - snake_block) // snake_block) * snake_block)
                         food_rect = pygame.Rect(food_vec, (snake_block, snake_block))
-                if any((cell.contains(head_rect) for cell in snake_list[:-1])):
+                if any((Vector2(cell.center).distance_to(head_vec) < 10 for cell in snake_list[:-1])):
+                    score_list.append({"score": score})
                     game_close = True
 
         finger_vec_new, image = Hands.cv2_finger_coord_image()
@@ -213,13 +279,13 @@ def game_loop():
         dis.fill(blue)
 
         if finger_vec_new is not None:
-            finger_vec_new.x = ((finger_vec_new.x - 30) / 290) * dis_width + side_bar_width
+            finger_vec_new.x = ((finger_vec_new.x - left_padding) / game_zone_width) * dis_width + side_bar_width
             if finger_vec_new.x < side_bar_width:
                 finger_vec_new.x = side_bar_width + 10
             if finger_vec_new.x > dis_width:
                 finger_vec_new.x = dis_width
 
-            finger_vec_new.y = ((finger_vec_new.y - 50) / 170) * dis_height
+            finger_vec_new.y = ((finger_vec_new.y - bottom_padding) / game_zone_height) * dis_height
             if finger_vec_new.y < 0:
                 finger_vec_new.y = 10
             if finger_vec_new.y > dis_height:
@@ -227,28 +293,36 @@ def game_loop():
 
             pygame.draw.circle(dis, green, finger_vec_new, 10)
 
-            snake_speed_vec =  (head_vec - finger_vec_new).normalize() * snake_speed
 
-            print(snake_speed_vec.xy)
-
-        image = cv2.rectangle(image, (30, 50), (320, 220), green)
+            snake_speed_vec =  (finger_vec_new - head_vec).normalize() * snake_speed
 
 
-        dis.blit(Hands.cv2_image_to_surface(image), (0, 0))
+        image = cv2.rectangle(image, (int(left_padding), int(bottom_padding)), (int(side_bar_width - left_padding), int(side_bar_height - bottom_padding)), green)
+
+
+        dis.blit(side_bar_surface(image, score), (0,0))
 
 
 
 
         if not game_screen_rect.contains(head_rect):
+            score_list.append({"score": score})
             game_close = True
 
         pygame.draw.rect(dis, green, food_rect)
 
         our_snake(head_rect, snake_list)
-        your_score(score)
+
+        pygame.draw.line(dis, black, head_vec, head_vec + snake_speed_vec)
+        pygame.draw.circle(dis, black, head_vec + snake_speed_vec, 2)
 
         pygame.display.update()
 
         clock.tick(framerate)
 
-game_loop()
+if __name__ == "__main__":
+    if os.path.isfile("score.csv"):
+        score_list = load_score("score.csv")
+    else:
+        score_list = []
+    game_loop()
